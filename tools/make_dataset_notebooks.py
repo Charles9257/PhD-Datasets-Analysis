@@ -255,273 +255,7 @@ def load_dataset():
                              extra="split=" + t.get("split", pd.Series("", index=t.index)).fillna("") + ";age_group=" + t.age.fillna("")))'''),
 }
 
-# --------------------------------------------------------------------------------------
-# Shared cells
-# --------------------------------------------------------------------------------------
-SETUP = '''import sys, subprocess
-IN_COLAB = "google.colab" in sys.modules
-
-if IN_COLAB:
-    from google.colab import drive
-    drive.mount("/content/drive")
-    # Colab already has most packages; this makes sure the audio ones are present and recent enough.
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                    "librosa>=0.10", "soundfile", "transformers>=4.40", "ipywidgets"], check=True)
-else:
-    print("Not on Colab: skipping Drive mount. Install dependencies once with: pip install -r requirements.txt")
-
-try:
-    import torch
-    if torch.cuda.is_available():
-        print("GPU:", torch.cuda.get_device_name(0), f"({torch.cuda.get_device_properties(0).total_memory/1e9:.1f} GB)")
-    else:
-        print("No GPU found, running on CPU. On Colab: Runtime > Change runtime type > T4 GPU, then re-run from the top.")
-except ImportError:
-    print("PyTorch not installed: the SSL embedding step will be skipped.")'''
-
-CONFIG = '''from pathlib import Path
-import os, re, json, random, warnings
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-warnings.filterwarnings("ignore")
-
-DATASET = "__NAME__"
-
-# ---- Paths ----
-# DATA_ROOT mirrors the local folder C:\\Desktop\\RGU PhD\\New folder\\Datasets.
-# On Colab, copy/sync that folder to Google Drive as MyDrive/Datasets, or change the path below.
-IN_COLAB = "google.colab" in __import__("sys").modules
-DEFAULT_ROOT = "/content/drive/MyDrive/Datasets" if IN_COLAB else r"C:\\Desktop\\RGU PhD\\New folder\\Datasets"
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", DEFAULT_ROOT))
-
-__PATHS__
-
-# ---- Outputs (never inside the source folders) ----
-if IN_COLAB:
-    OUT_DIR = Path("/content/drive/MyDrive/SER_outputs") / DATASET
-else:
-    try:
-        NB_DIR = Path(__vsc_ipynb_file__).parent          # VS Code
-    except NameError:
-        NB_DIR = Path.cwd()                               # Jupyter: folder the notebook was opened from
-    OUT_DIR = NB_DIR / "outputs"
-(OUT_DIR / "features").mkdir(parents=True, exist_ok=True)
-(OUT_DIR / "figures").mkdir(parents=True, exist_ok=True)
-
-# ---- Knobs ----
-SEED = 42
-N_SAMPLE = 600              # utterances sampled (spread across speakers) for features/probes; None = all (slow)
-MAX_SECONDS = 6.0           # crop long utterances
-TARGET_SR = 16_000
-SPEAKER_LABEL = "speaker"   # what the speaker column means (a loader may change this, e.g. to a proxy grouping)
-RUN_SSL = True              # wav2vec2 embeddings (GPU recommended); set False for handcrafted features only
-SSL_MODEL = "facebook/wav2vec2-base"   # or "facebook/hubert-base-ls960"
-
-random.seed(SEED); np.random.seed(SEED)
-for k, p in PATHS.items():
-    print(f"{k:16s} {'OK ' if p.exists() else 'MISSING'}  {p}")
-print("Outputs ->", OUT_DIR)
-if not all(PATHS[k].exists() for k in REQUIRED):
-    raise FileNotFoundError(f"{DATASET} files not found under {DATA_ROOT}. Check the Drive folder or edit DATA_ROOT / PATHS above.")'''
-
-SUMMARY = '''meta = load_dataset()
-meta.to_csv(OUT_DIR / f"{DATASET}_metadata.csv", index=False)
-HAS_EMO = meta.emotion.notna().any()
-HAS_GENDER = meta.gender.dropna().nunique() > 1
-HAS_AGE = meta.age.notna().any() and meta.drop_duplicates("speaker").age.nunique() > 1
-
-print(f"{DATASET}: {len(meta):,} utterances, {meta.speaker.nunique()} speakers")
-print("Gender (speakers):", meta.drop_duplicates("speaker").gender.value_counts(dropna=False).to_dict())
-if HAS_EMO: print("Emotions:", meta.emotion.value_counts().to_dict())
-speakers = meta.groupby("speaker").agg(gender=("gender", "first"), age=("age", "first"), utterances=("path", "size"))
-display(meta.head())
-speakers'''
-
-PLOTS = '''panels = [p for p, ok in [("emotion", HAS_EMO), ("speaker", True), ("emo_gender", HAS_EMO and HAS_GENDER), ("age", HAS_AGE)] if ok]
-fig, axes = plt.subplots(1, len(panels), figsize=(6 * len(panels), 4.5), squeeze=False); axes = axes[0]
-for ax, p in zip(axes, panels):
-    if p == "emotion":
-        meta.emotion.value_counts().plot.bar(ax=ax, color="tab:blue"); ax.set_title("Utterances per emotion")
-    elif p == "speaker":
-        top = speakers.sort_values("utterances", ascending=False).head(40)
-        top.utterances.plot.bar(ax=ax, color=top.gender.map({"female": "tab:red", "male": "tab:blue"}).fillna("grey").tolist())
-        ax.set_title("Utterances per speaker (red F, blue M, grey unknown)"); ax.set_xticklabels([])
-    elif p == "emo_gender":
-        pd.crosstab(meta.emotion, meta.gender).plot.bar(ax=ax); ax.set_title("Emotion x gender")
-    elif p == "age":
-        speakers.age.dropna().plot.hist(bins=15, ax=ax); ax.set_title("Speaker age")
-    ax.tick_params(axis="x", rotation=45)
-plt.tight_layout(); plt.savefig(OUT_DIR / "figures" / "distributions.png", dpi=150); plt.show()
-
-if HAS_EMO and HAS_GENDER:
-    # Emotion and gender are often correlated in acted corpora; this matters for attribute leakage
-    display(pd.crosstab(meta.emotion, meta.gender, normalize="index").round(2))'''
-
-DURATION = '''import librosa, librosa.display, soundfile as sf
-from IPython.display import Audio, display
-
-def info(p):
-    try:
-        i = sf.info(p); return i.duration, i.samplerate
-    except Exception:
-        return librosa.get_duration(path=p), librosa.get_samplerate(p)
-
-samp = meta.sample(min(len(meta), 300), random_state=SEED).copy()
-samp[["dur", "sr"]] = [info(p) for p in samp.path]
-print("Sample rates:", samp.sr.value_counts().to_dict())
-samp.groupby("emotion" if HAS_EMO else "gender", dropna=False).dur.describe().round(2)'''
-
-EXAMPLES = '''def load_audio(path, sr=TARGET_SR, max_s=None):
-    y, _ = librosa.load(path, sr=sr, mono=True, duration=max_s)
-    return y
-
-def show_example(row):
-    y = load_audio(row.path, max_s=10)
-    fig, ax = plt.subplots(1, 2, figsize=(14, 3))
-    librosa.display.waveshow(y, sr=TARGET_SR, ax=ax[0]); ax[0].set_title(f"{row.emotion} | {row.speaker} | {row.gender}")
-    S = librosa.power_to_db(librosa.feature.melspectrogram(y=y, sr=TARGET_SR, n_mels=64), ref=np.max)
-    librosa.display.specshow(S, sr=TARGET_SR, x_axis="time", y_axis="mel", ax=ax[1]); ax[1].set_title("log-mel")
-    plt.show(); display(Audio(y, rate=TARGET_SR))
-
-by = "emotion" if HAS_EMO else "speaker"
-for _, row in meta.dropna(subset=[by]).groupby(by).sample(1, random_state=SEED).head(8).iterrows():
-    show_example(row)'''
-
-FEATURES = '''from tqdm.auto import tqdm
-
-def sample_meta(meta, n=N_SAMPLE):
-    # sample utterances spreading across speakers (and emotions where available)
-    if n is None or n >= len(meta): return meta.reset_index(drop=True)
-    per = max(1, n // meta.speaker.nunique())
-    s = pd.concat([g.sample(min(len(g), per), random_state=SEED) for _, g in meta.groupby("speaker")])
-    if len(s) < n:
-        s = pd.concat([s, meta.drop(s.index).sample(min(n - len(s), len(meta) - len(s)), random_state=SEED)])
-    return s.sample(min(n, len(s)), random_state=SEED).reset_index(drop=True)
-
-work = sample_meta(meta)
-print(len(work), "utterances,", work.speaker.nunique(), "speakers")
-
-def preprocess(path):
-    y = load_audio(path)
-    y, _ = librosa.effects.trim(y, top_db=30)
-    y = y / (np.abs(y).max() + 1e-8)
-    return y[: int(MAX_SECONDS * TARGET_SR)]
-
-def handcrafted(y):
-    mf = librosa.feature.mfcc(y=y, sr=TARGET_SR, n_mfcc=40)
-    mf = np.vstack([mf, librosa.feature.delta(mf)])
-    lm = librosa.power_to_db(librosa.feature.melspectrogram(y=y, sr=TARGET_SR, n_mels=64))
-    return np.concatenate([mf.mean(1), mf.std(1)]), np.concatenate([lm.mean(1), lm.std(1)])
-
-tag = f"n{N_SAMPLE}_s{SEED}"
-f_cache = OUT_DIR / "features" / f"handcrafted_{tag}.npz"
-if f_cache.exists():
-    z = np.load(f_cache); X_mfcc, X_mel = z["mfcc"], z["mel"]
-else:
-    mf, ml = [], []
-    for p in tqdm(work.path, desc="MFCC/log-mel"):
-        a, b = handcrafted(preprocess(p)); mf.append(a); ml.append(b)
-    X_mfcc, X_mel = np.array(mf), np.array(ml)
-    np.savez(f_cache, mfcc=X_mfcc, mel=X_mel)
-work.to_csv(OUT_DIR / "features" / f"work_meta_{tag}.csv", index=False)
-FEATS = {"MFCC": X_mfcc, "log-mel": X_mel}
-{k: v.shape for k, v in FEATS.items()}'''
-
-SSL = '''if RUN_SSL:
-    import torch
-    from transformers import AutoFeatureExtractor, AutoModel
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    short = SSL_MODEL.split("/")[-1]
-    cache = OUT_DIR / "features" / f"{short}_{tag}.npy"
-    if cache.exists():
-        E = np.load(cache)
-    else:
-        fe = AutoFeatureExtractor.from_pretrained(SSL_MODEL)
-        model = AutoModel.from_pretrained(SSL_MODEL, output_hidden_states=True).to(device).eval()
-        out = []
-        with torch.no_grad():
-            for p in tqdm(work.path, desc=short):
-                inp = fe(preprocess(p), sampling_rate=TARGET_SR, return_tensors="pt").to(device)
-                hs = model(**inp).hidden_states                                   # tuple(L+1) of [1, T, 768]
-                out.append(torch.stack([h.mean(1)[0] for h in hs]).cpu().numpy())  # [L+1, 768]
-        E = np.stack(out); np.save(cache, E)                                     # [N, L+1, 768]
-    FEATS[short] = E[:, -1]
-    print(short, E.shape)
-else:
-    print("RUN_SSL = False: using handcrafted features only")'''
-
-PROBES = '''from sklearn.linear_model import LogisticRegression, Ridge
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
-from sklearn.model_selection import GroupShuffleSplit, StratifiedShuffleSplit
-from sklearn.metrics import balanced_accuracy_score, f1_score, accuracy_score, mean_absolute_error
-
-def clf(): return make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000, C=0.5))
-
-def split(y, groups, speaker_independent, test_size=0.25):
-    """Speaker-independent split with >= 2 classes on both sides (tries several seeds); None if impossible."""
-    for s in range(SEED, SEED + 30):
-        if speaker_independent:
-            tr, te = next(GroupShuffleSplit(1, test_size=test_size, random_state=s).split(y, y, groups))
-        else:
-            tr, te = next(StratifiedShuffleSplit(1, test_size=test_size, random_state=s).split(y, y))
-        if len(set(y[tr])) > 1 and len(set(y[te])) > 1 and set(y[te]) <= set(y[tr]):
-            return tr, te
-    return None
-
-def eval_task(X, y, groups, speaker_independent=True):
-    y = np.asarray(y); sp = split(y, np.asarray(groups), speaker_independent)
-    if sp is None: return None
-    tr, te = sp; m = clf().fit(X[tr], y[tr]); p = m.predict(X[te])
-    maj = pd.Series(y[tr]).mode()[0]
-    acc, base = accuracy_score(y[te], p), accuracy_score(y[te], np.full(len(te), maj))
-    return dict(UAR=balanced_accuracy_score(y[te], p), F1=f1_score(y[te], p, average="macro"),
-                acc=acc, majority_acc=base, advantage=acc - base)
-
-res = []
-for fname, X in FEATS.items():
-    tasks = []
-    if HAS_EMO:
-        ok = work.emotion.notna().values
-        tasks.append(("emotion (unseen speakers)", ok, work.emotion.values, True))
-    if HAS_GENDER:
-        ok = work.gender.notna().values
-        tasks.append(("gender (unseen speakers)", ok, work.gender.values, True))
-    counts = work.speaker.map(work.speaker.value_counts())
-    if work.speaker.nunique() > 1:
-        ok = (counts >= 4).values
-        tasks.append((f"{SPEAKER_LABEL} ID (closed set)", ok, work.speaker.values, False))
-    for task, ok, y, si in tasks:
-        r = eval_task(X[ok], y[ok], work.speaker.values[ok], si)
-        if r is None:
-            print(f"skip {task}: not enough speakers/classes for a valid split"); continue
-        r.update(task=task, features=fname); res.append(r)
-probe = pd.DataFrame(res)
-if len(probe):
-    probe = probe[["task", "features", "UAR", "F1", "acc", "majority_acc", "advantage"]].round(3)
-    probe.to_csv(OUT_DIR / f"probes_{tag}.csv", index=False)
-probe'''
-
-AGE = '''# Age probe: regression MAE on unseen speakers (only if the dataset has age labels for several speakers)
-ok = work.age.notna().values
-if HAS_AGE and work[ok].speaker.nunique() >= 4:
-    g = work[ok]; yv = g.age.values
-    tr, te = next(GroupShuffleSplit(1, test_size=0.25, random_state=SEED).split(g, groups=g.speaker))
-    for fname, X in FEATS.items():
-        Xi = X[ok]
-        m = make_pipeline(StandardScaler(), Ridge(alpha=10)).fit(Xi[tr], yv[tr])
-        print(f"{fname:16s} age MAE = {mean_absolute_error(yv[te], m.predict(Xi[te])):.1f} y   "
-              f"(predict-mean MAE = {mean_absolute_error(yv[te], np.full(len(te), yv[tr].mean())):.1f})")
-else:
-    print("Age probe skipped: no age labels or fewer than 4 speakers with age")'''
-
-NEXT = '''## Notes
-
-* Metadata for this corpus is saved as `{DATASET}_metadata.csv` in `OUT_DIR`, with the same columns as the combined notebook (`path, corpus, emotion, emotion_raw, speaker, gender, age, extra`), so tables from the per-dataset notebooks can be concatenated.
-* **Speaker-independent** splits are used for emotion and gender; speaker ID is closed-set by definition.
-* Attacker **advantage** = accuracy minus majority-class accuracy. Proposed gate: a defence passes if advantage stays within 5 pp while emotion UAR drops by at most 5 points (pending supervisor confirmation).
-* For cross-corpus experiments and the FedAvg attack simulation, use the combined notebook `notebooks/SER_Privacy_Dataset_Prep.ipynb`.'''
+from nb_cells import *  # noqa: E402,F401  (shared notebook cells)
 
 
 def md(s): return {"cell_type": "markdown", "metadata": {}, "source": s.splitlines(keepends=True)}
@@ -536,38 +270,93 @@ def build(name, d):
     folder = name.replace(" ", "_")
     rel = f"notebooks/{folder}/{folder}_Explore.ipynb"
     badge = f"[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]({colab_url(rel)})"
-    has_emo = name not in ("CommonVoice-SPS",)
     cells = [
-        md(f"{badge}\n\n# {d['title']}: load, explore and probe\n\n{d['blurb']}\n\n"
-           "This notebook works on this one dataset only. It builds a metadata table (path, emotion, speaker, gender, age), "
-           "shows distributions, durations and audio examples, extracts MFCC / log-mel"
-           + (" / wav2vec2" ) + " features, and runs quick probes: "
-           + ("an emotion baseline (UAR, macro-F1) and " if has_emo else "")
-           + "attribute probes (gender, speaker ID, age where available) as a first leakage check.\n\n"
+        md(f"{badge}\n\n# {d['title']}: full data analysis, SER models, federated learning, attacks and defences\n\n{d['blurb']}\n\n"
            f"**Dataset notes**\n{d['caveats']}\n\n"
+           "**What this notebook covers** (this dataset only)\n"
+           "1. Setup and configuration\n2. Threat model\n"
+           "3. Data inspection: rows, columns, data types, missing values (NaN), detailed look at every column, duplicates\n"
+           "4. Acoustic feature table: duration, sample rate, loudness, clipping, silence, pitch (F0), spectral shape, SNR\n"
+           "5. Descriptive statistics: central tendency (mean, median, mode), dispersion (std, variance, IQR, range, CV, MAD), skewness, kurtosis\n"
+           "6. Outliers: IQR and z-score rules, box plots, most extreme files\n"
+           "7. Data cleaning (logged) and 8. data wrangling: label encoding, speaker-independent train/val/test split, class weights\n"
+           "9. Analysis and visualisation: distributions, features by emotion and gender, correlations, statistical tests, audio examples\n"
+           "10. Features (MFCC, log-mel, wav2vec2) and embedding visualisation\n"
+           "11. Machine learning models: logistic regression, SVM, random forest, MLP (UAR, macro-F1, confusion matrix)\n"
+           "12. Paralinguistic inference attacks on representations (gender, speaker, age)\n"
+           "13. Federated learning (FedAvg, one client per speaker) and attacks by an honest-but-curious server: gender, age, speaker linkage, membership inference\n"
+           "14. Defences: local DP (ε = 1, 3, 5, 8), Secure Aggregation, SecAgg + distributed DP, gradient reversal\n"
+           "15. Evaluation: privacy-utility-efficiency (P-U-E) table and the 5 pp / 5 pt decision gate\n\n"
            "**Source data is never modified.** Outputs go to `OUT_DIR` (on Colab: `MyDrive/SER_outputs/"
-           f"{name}`).\n\n**On Google Colab:** Runtime > Change runtime type > **T4 GPU**, then run cells top to bottom."),
+           f"{name}`).\n\n**On Google Colab:** Runtime > Change runtime type > **T4 GPU**, then Runtime > Run all."),
         md("## 0. Environment setup (Colab or local)\n\nMounts Google Drive on Colab, installs missing packages and checks for a GPU."),
         code(SETUP),
-        md("## 1. Configuration\n\n`DATA_ROOT` should mirror your local `Datasets` folder (default on Colab: `MyDrive/Datasets`)."),
+        md("## 1. Configuration\n\n`DATA_ROOT` should mirror your local `Datasets` folder (default on Colab: `MyDrive/Datasets`). "
+           "All knobs (sample sizes, FL rounds, ε grid, gate thresholds) are here."),
         code(CONFIG.replace("__NAME__", name).replace("__PATHS__", d["paths"])),
-        md("## 2. Metadata table\n\nOne row per utterance: `path, corpus, emotion, emotion_raw, speaker, gender, age, extra`."),
+        md(THREAT_MODEL),
+        md("## 3. Data inspection\n\n### 3.1 Load the metadata table\nOne row per utterance: `path, corpus, emotion, emotion_raw, speaker, gender, age, extra`."),
         code(d["loader"]),
-        code(SUMMARY),
-        md("## 3. Exploration"),
+        code(LOAD),
+        md("### 3.2 Columns: data types, missing values, unique values"),
+        code(INSPECT_COLUMNS),
+        md("### 3.3 Detailed inspection of each column"),
+        code(INSPECT_DETAIL),
+        md("### 3.4 Speakers and available labels"),
+        code(SPEAKERS),
+        md("## 4. Acoustic feature table\n\nReads each audio file (up to `N_INSPECT` files, spread across speakers) and measures duration, sample rate, channels, "
+           "loudness (RMS dB), peak, clipping %, silence %, zero-crossing rate, spectral centroid / bandwidth / roll-off, median and spread of pitch (F0) and an SNR estimate. "
+           "Cached in `OUT_DIR/features`."),
+        code(ACOUSTIC),
+        md("## 5. Descriptive statistics\n\nMeasures of **central tendency** (mean, median, mode), **dispersion** (standard deviation, variance, quartiles, IQR, range, "
+           "coefficient of variation, median absolute deviation) and **shape** (skewness, kurtosis), overall and by emotion and gender."),
+        code(DESCRIPTIVE),
+        md("## 6. Outliers\n\nTukey fences (below Q1 − 1.5·IQR or above Q3 + 1.5·IQR) and |z| > 3, per feature."),
+        code(OUTLIERS),
+        md("## 7. Data cleaning\n\nEvery rule is logged with the number of rows it removes. Source files are never touched; the clean table is saved separately."),
+        code(CLEANING),
+        md("## 8. Data wrangling\n\nLabel encoding, a **speaker-independent** train / validation / test split (no speaker in more than one split), class balance and class weights."),
+        code(WRANGLING),
+        md("## 9. Analysis and visualisation"),
         code(PLOTS),
-        code(DURATION),
+        code(PLOTS2),
+        md("### 9.1 Statistical tests\nChi-square (emotion × gender, Cramér's V), Kruskal-Wallis (feature ~ emotion, ε²) and Mann-Whitney (feature ~ gender, rank-biserial r)."),
+        code(STATS_TESTS),
+        md("### 9.2 Listen: one example per class"),
         code(EXAMPLES),
-        md("## 4. Preprocessing and features\n\n16 kHz mono, silence trim (`top_db=30`), peak normalisation, crop to `MAX_SECONDS`. "
-           "MFCC (40 + deltas, mean/std pooled, 160-d), log-mel (64 bands, mean/std, 128-d), and optionally wav2vec2 last-layer "
-           "mean-pooled embeddings (all layers are cached). Cached in `OUT_DIR/features`."),
+        md("## 10. Features\n\n16 kHz mono, silence trim (`top_db=30`), peak normalisation, crop to `MAX_SECONDS`. MFCC (40 + deltas, mean/std, 160-d), "
+           "log-mel (64 bands, mean/std, 128-d) and wav2vec2 mean-pooled embeddings (all layers cached, last layer used)."),
         code(FEATURES),
         code(SSL),
-        md("## 5. Quick probes\n\n" + ("Emotion recognition baseline and attribute" if has_emo else "Attribute")
-           + " probes (what an attacker could recover from the representations). Probes that the data cannot support "
-           "(for example gender on a single-gender corpus) are skipped with a message."),
-        code(PROBES),
-        code(AGE),
+        code(EMBED_VIZ),
+        md("## 11. Machine learning models (centralised SER baseline)\n\nTrained on train + validation speakers, evaluated on unseen test speakers. "
+           "UAR (balanced accuracy) is the key metric."),
+        code(ML),
+        md("## 12. Paralinguistic inference attacks on representations (A1)\n\nIf embeddings are shared (feature-sharing / split learning), how much gender, speaker identity and age can an attacker recover? "
+           "Gender and age are tested on **unseen speakers**; speaker ID is closed-set by definition."),
+        code(ATTACK_REPR),
+        md("## 13. Federated learning and attacks by an honest-but-curious server\n\n"
+           "Each client is one speaker (split into several clients when a corpus has few speakers). Clients train a small MLP emotion head on frozen features; the server averages updates (FedAvg). "
+           "20% of each training speaker's clips are kept out of training as **non-members** for the membership attack."),
+        code(FL_SETUP),
+        md("### 13.1 Privacy accounting for the DP defences"),
+        code(PRIVACY_ACCOUNTING),
+        md("### 13.2 FedAvg training loop (with pluggable defences)"),
+        code(FL_RUN),
+        md("### 13.3 Attacks on the undefended system\n"
+           "* **A2 gender** inference from each client's update (grouped CV, so the attacker generalises to new speakers)\n"
+           "* **A3 age** inference from updates (where age labels exist)\n"
+           "* **A4 speaker linkage**: recognise which client sent an update from its earlier updates\n"
+           "* **A5 membership** inference on the final model (loss threshold; AUC and max TPR − FPR)"),
+        code(FL_ATTACKS),
+        md("## 14. Defences\n\n"
+           "* **Local DP**: each client clips its update to `CLIP` and adds Gaussian noise before sending (protects every single update; costly in utility).\n"
+           "* **Secure Aggregation**: pairwise masks that cancel in the sum, so the server sees only the aggregate.\n"
+           "* **SecAgg + distributed DP**: each client adds a share of the noise; the sum carries the DP guarantee.\n"
+           "* **Gradient reversal**: an adversarial gender head is trained through a gradient-reversal layer so the shared encoder forgets gender."),
+        code(DEFENCES),
+        md("## 15. Evaluation: privacy-utility-efficiency and the decision gate"),
+        code(PUE_PLOTS),
         md(NEXT),
     ]
     for i, c in enumerate(cells):

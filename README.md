@@ -17,7 +17,21 @@ Dataset preparation, exploration and first leakage checks for the PhD work on **
 
 ## Per-dataset notebooks
 
-One notebook per corpus, each in its own folder, so you can load and explore a dataset on its own. Each one builds the metadata table (path, emotion, speaker, gender, age), plots distributions, plays audio examples, extracts MFCC / log-mel / wav2vec2 features and runs quick probes (emotion UAR, gender, speaker ID, age where the data supports it). Outputs go to `MyDrive/SER_outputs/<dataset>`. The combined notebook above is unchanged.
+One notebook per corpus, each in its own folder, so you can analyse a dataset on its own. Each one covers, for that dataset:
+
+1. **Threat model** (honest-but-curious server; assets: gender, age, speaker identity, membership)
+2. **Data inspection**: rows, columns, data types, missing values (NaN), a detailed look at every column, duplicates
+3. **Acoustic feature table** (duration, sample rate, loudness, clipping, silence, pitch, spectral shape, SNR)
+4. **Descriptive statistics**: central tendency, dispersion, skewness and kurtosis, overall and by emotion and gender
+5. **Outliers** (IQR and z-score), **data cleaning** (logged) and **wrangling** (encoding, speaker-independent train/val/test split, class weights)
+6. **Analysis and visualisation**, with statistical tests (chi-square, Kruskal-Wallis, Mann-Whitney)
+7. **Machine learning models**: logistic regression, SVM, random forest and MLP on MFCC, log-mel and wav2vec2 features
+8. **Paralinguistic inference attacks** on the embeddings (gender, speaker, age)
+9. **Federated learning** (FedAvg, one client per speaker), with server-side attacks on gender, age, speaker linkage and membership
+10. **Defences**: local DP at ε = 1, 3, 5, 8; Secure Aggregation; SecAgg with distributed DP; gradient reversal
+11. **Evaluation**: a privacy-utility-efficiency table and the 5 pp / 5 pt decision gate
+
+Sections the data cannot support are skipped with a message (for example, gender attacks on all-male SAVEE, or SER and FL on Common Voice, which has no emotion labels). Outputs go to `MyDrive/SER_outputs/<dataset>`. The combined notebook above is unchanged.
 
 | Dataset | Notebook | Colab |
 |---|---|---|
