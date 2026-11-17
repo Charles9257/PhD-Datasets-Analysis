@@ -52,3 +52,6 @@ venv/
 .env
 .DS_Store
 Thumbs.db
+
+# ---- Keep the per-dataset notebook folders (their names match the corpus patterns above) ----
+!/notebooks/*/

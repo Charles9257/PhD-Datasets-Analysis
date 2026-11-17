@@ -9,10 +9,30 @@ Dataset preparation, exploration and first leakage checks for the PhD work on **
 | Path | What it is |
 |---|---|
 | `notebooks/SER_Privacy_Dataset_Prep.ipynb` | Unified metadata for IEMOCAP, CREMA-D, RAVDESS, EmoDB, SAVEE; exploration; MFCC / log-mel / wav2vec2 / HuBERT features; SER baseline (UAR, macro-F1); gender / speaker / age attribute probes; minimal FedAvg with a server-side gender inference attack and a DP switch |
+| `notebooks/<Dataset>/<Dataset>_Explore.ipynb` | One notebook per dataset (see below) |
 | `docs/datasets_folder_survey.md` | Survey of the local `Datasets` folder: what each corpus holds and its gaps for attribute inference |
 | `requirements.txt` | Packages for running locally |
 
 **No audio or dataset files are in this repository.** The corpora are licensed; keep them on Google Drive or your own machine. `.gitignore` blocks audio, video, archives and cached features.
+
+## Per-dataset notebooks
+
+One notebook per corpus, each in its own folder, so you can load and explore a dataset on its own. Each one builds the metadata table (path, emotion, speaker, gender, age), plots distributions, plays audio examples, extracts MFCC / log-mel / wav2vec2 features and runs quick probes (emotion UAR, gender, speaker ID, age where the data supports it). Outputs go to `MyDrive/SER_outputs/<dataset>`. The combined notebook above is unchanged.
+
+| Dataset | Notebook | Colab |
+|---|---|---|
+| IEMOCAP | [notebooks/IEMOCAP/IEMOCAP_Explore.ipynb](notebooks/IEMOCAP/IEMOCAP_Explore.ipynb) | [Open in Colab](https://colab.research.google.com/github/Charles9257/PhD-Datasets-Analysis/blob/claude/project-thread-9pn62q/notebooks/IEMOCAP/IEMOCAP_Explore.ipynb) |
+| CREMA-D | [notebooks/CREMA-D/CREMA-D_Explore.ipynb](notebooks/CREMA-D/CREMA-D_Explore.ipynb) | [Open in Colab](https://colab.research.google.com/github/Charles9257/PhD-Datasets-Analysis/blob/claude/project-thread-9pn62q/notebooks/CREMA-D/CREMA-D_Explore.ipynb) |
+| RAVDESS | [notebooks/RAVDESS/RAVDESS_Explore.ipynb](notebooks/RAVDESS/RAVDESS_Explore.ipynb) | [Open in Colab](https://colab.research.google.com/github/Charles9257/PhD-Datasets-Analysis/blob/claude/project-thread-9pn62q/notebooks/RAVDESS/RAVDESS_Explore.ipynb) |
+| EmoDB | [notebooks/EmoDB/EmoDB_Explore.ipynb](notebooks/EmoDB/EmoDB_Explore.ipynb) | [Open in Colab](https://colab.research.google.com/github/Charles9257/PhD-Datasets-Analysis/blob/claude/project-thread-9pn62q/notebooks/EmoDB/EmoDB_Explore.ipynb) |
+| SAVEE | [notebooks/SAVEE/SAVEE_Explore.ipynb](notebooks/SAVEE/SAVEE_Explore.ipynb) | [Open in Colab](https://colab.research.google.com/github/Charles9257/PhD-Datasets-Analysis/blob/claude/project-thread-9pn62q/notebooks/SAVEE/SAVEE_Explore.ipynb) |
+| TESS | [notebooks/TESS/TESS_Explore.ipynb](notebooks/TESS/TESS_Explore.ipynb) | [Open in Colab](https://colab.research.google.com/github/Charles9257/PhD-Datasets-Analysis/blob/claude/project-thread-9pn62q/notebooks/TESS/TESS_Explore.ipynb) |
+| MSP-IMPROV | [notebooks/MSP-IMPROV/MSP-IMPROV_Explore.ipynb](notebooks/MSP-IMPROV/MSP-IMPROV_Explore.ipynb) | [Open in Colab](https://colab.research.google.com/github/Charles9257/PhD-Datasets-Analysis/blob/claude/project-thread-9pn62q/notebooks/MSP-IMPROV/MSP-IMPROV_Explore.ipynb) |
+| Common Voice Spontaneous Speech | [notebooks/CommonVoice-SPS/CommonVoice-SPS_Explore.ipynb](notebooks/CommonVoice-SPS/CommonVoice-SPS_Explore.ipynb) | [Open in Colab](https://colab.research.google.com/github/Charles9257/PhD-Datasets-Analysis/blob/claude/project-thread-9pn62q/notebooks/CommonVoice-SPS/CommonVoice-SPS_Explore.ipynb) |
+
+Dataset notes: SAVEE (all male) and TESS (2 female speakers) skip the gender probe. MSP-IMPROV has only session 1 and no label file, so it uses the *target* emotion from the file name. Common Voice Spontaneous Speech has no emotion labels (speaker ID and, for `pne`, gender/age only). Same Drive layout as below; the extra folders are `TESS/`, `MSP-IMPROV/` and `mozilla-common-voice/` directly under `MyDrive/Datasets`.
+
+`tools/make_dataset_notebooks.py` regenerates these notebooks if you want to change all of them at once.
 
 ## Run on Google Colab
 
