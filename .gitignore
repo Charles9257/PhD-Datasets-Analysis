@@ -1,0 +1,54 @@
+# ---- Licensed speech corpora: NEVER commit audio or dataset files ----
+# (IEMOCAP, CREMA-D, MSP-IMPROV, RAVDESS, SAVEE, EmoDB, Common Voice, ... are licensed; keep them on Drive/locally)
+Datasets/
+datasets/
+data/
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.aac
+*.opus
+*.sph
+*.avi
+*.mp4
+*.mov
+*.parquet
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.rar
+*.TextGrid
+*.lab
+*.phn
+*.wdseg
+*.mocap
+**/IEMOCAP*/
+**/CREMA-D*/
+**/MSP-*/
+**/RAVDESS*/
+**/Savee/
+**/EmoDB/
+
+# ---- Notebook outputs (features can encode speaker information) ----
+outputs/
+SER_outputs/
+*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# ---- Python / Jupyter ----
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+.DS_Store
+Thumbs.db

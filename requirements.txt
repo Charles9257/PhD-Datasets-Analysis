@@ -1,0 +1,15 @@
+# Local install (Colab already ships with most of these; the notebook's setup cell handles Colab).
+# Python 3.10 or 3.11 recommended.
+numpy
+pandas
+matplotlib
+seaborn
+librosa>=0.10
+soundfile
+scikit-learn
+tqdm
+ipython
+ipywidgets
+jupyterlab
+torch        # CPU build: pip install torch --index-url https://download.pytorch.org/whl/cpu
+transformers>=4.40
