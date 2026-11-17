@@ -174,6 +174,43 @@ def load_dataset():
     if bad: print(f"{bad} files did not match the MSP-IMPROV naming pattern and were skipped")
     return pd.DataFrame(rows)'''),
 
+"MSP-PODCAST": dict(
+    title="MSP-Podcast",
+    blurb="MSP-Podcast: natural, spontaneous emotional speech segmented from podcast recordings (UT Dallas). Your folder `MSP-POSCAST/Audios/Audios` holds 58,899 wav segments named `MSP-PODCAST_<podcast>_<segment>.wav`.",
+    caveats="* **No label files are in the folder yet.** Without them the notebook runs in *audio-only* mode: durations, examples and features work, but emotion, gender and true speaker probes are skipped. The podcast number from the file name is used as a **proxy grouping** (one podcast can contain several speakers, and a speaker can appear in several podcasts), so the closed-set probe is labelled *podcast source*, not speaker.\n* When you get the labels from UT Dallas, put `labels_consensus.csv` (columns `FileName, EmoClass, EmoAct, EmoVal, EmoDom, SpkrID, Gender, Split_Set`) in `MSP-POSCAST/Labels/`. The notebook then picks up emotion (A, S, H, U, F, D, C, N, O; `X` = no agreement, dropped), gender and speaker IDs automatically. Utterances with unknown speaker are grouped per podcast.\n* Large corpus: listing 58k files on Drive takes a minute or two; keep `N_SAMPLE` small at first.\n* Arousal / valence / dominance scores are kept in `extra` when labels are present.",
+    paths='''MSPP_ROOT = next((DATA_ROOT / n for n in ["MSP-POSCAST", "MSP-PODCAST", "MSP-Podcast"] if (DATA_ROOT / n).exists()),
+                 DATA_ROOT / "MSP-POSCAST")
+LABEL_CANDIDATES = [MSPP_ROOT / "Labels" / "labels_consensus.csv", MSPP_ROOT / "labels_consensus.csv",
+                    MSPP_ROOT / "Labels" / "Labels" / "labels_consensus.csv"]
+PATHS = {"MSPP_ROOT": MSPP_ROOT,
+         "MSPP_LABELS": next((p for p in LABEL_CANDIDATES if p.exists()), LABEL_CANDIDATES[0])}
+REQUIRED = ["MSPP_ROOT"]''',
+    loader='''def load_dataset():
+    global SPEAKER_LABEL
+    wavs = {f.name: f for f in PATHS["MSPP_ROOT"].rglob("*.wav")}
+    print(f"{len(wavs):,} wav files found")
+    if PATHS["MSPP_LABELS"].exists():
+        lab = pd.read_csv(PATHS["MSPP_LABELS"])
+        m = {"A":"angry","S":"sad","H":"happy","U":"surprise","F":"fear","D":"disgust","C":"contempt","N":"neutral","O":"other"}
+        lab = lab[lab.FileName.isin(wavs)]
+        pod = lab.FileName.str.split("_").str[1]
+        spk = lab.SpkrID.astype(str)
+        unknown = spk.str.lower().isin(["unknown", "nan", "-1", ""])
+        g = lab.Gender.astype(str).str.lower().map({"female": "female", "male": "male"})
+        out = pd.DataFrame(dict(path=lab.FileName.map(lambda n: str(wavs[n])), corpus="MSP-Podcast",
+                                emotion=lab.EmoClass.map(m), emotion_raw=lab.EmoClass,
+                                speaker=np.where(unknown, "MSPP_unk_pod" + pod, "MSPP_" + spk), gender=g, age=np.nan,
+                                extra="split=" + lab.Split_Set.astype(str) + ";act=" + lab.EmoAct.astype(str)
+                                      + ";val=" + lab.EmoVal.astype(str) + ";dom=" + lab.EmoDom.astype(str)))
+        print("Labels found:", PATHS["MSPP_LABELS"])
+        return out.dropna(subset=["emotion"]).reset_index(drop=True)
+    print("No labels_consensus.csv found: audio-only mode, grouping by podcast number (a proxy, not speaker identity).")
+    SPEAKER_LABEL = "podcast source"
+    names = sorted(wavs)
+    return pd.DataFrame(dict(path=[str(wavs[n]) for n in names], corpus="MSP-Podcast", emotion=np.nan, emotion_raw=np.nan,
+                             speaker=["MSPP_pod" + n.split("_")[1] for n in names], gender=np.nan, age=np.nan,
+                             extra=["segment=" + n.split("_")[-1].split(".")[0] for n in names]))'''),
+
 "CommonVoice-SPS": dict(
     title="Common Voice Spontaneous Speech",
     blurb="Mozilla Common Voice **Spontaneous Speech 1.0** (Sep 2025): 21 languages (no English), about 38.5k mp3 clips, about 380 speakers. Useful for **speaker-ID attacks** and cross-lingual checks. It has **no emotion labels**, so the SER sections are skipped.",
@@ -277,6 +314,7 @@ SEED = 42
 N_SAMPLE = 600              # utterances sampled (spread across speakers) for features/probes; None = all (slow)
 MAX_SECONDS = 6.0           # crop long utterances
 TARGET_SR = 16_000
+SPEAKER_LABEL = "speaker"   # what the speaker column means (a loader may change this, e.g. to a proxy grouping)
 RUN_SSL = True              # wav2vec2 embeddings (GPU recommended); set False for handcrafted features only
 SSL_MODEL = "facebook/wav2vec2-base"   # or "facebook/hubert-base-ls960"
 
@@ -453,7 +491,7 @@ for fname, X in FEATS.items():
     counts = work.speaker.map(work.speaker.value_counts())
     if work.speaker.nunique() > 1:
         ok = (counts >= 4).values
-        tasks.append(("speaker ID (closed set)", ok, work.speaker.values, False))
+        tasks.append((f"{SPEAKER_LABEL} ID (closed set)", ok, work.speaker.values, False))
     for task, ok, y, si in tasks:
         r = eval_task(X[ok], y[ok], work.speaker.values[ok], si)
         if r is None:
@@ -498,7 +536,7 @@ def build(name, d):
     folder = name.replace(" ", "_")
     rel = f"notebooks/{folder}/{folder}_Explore.ipynb"
     badge = f"[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]({colab_url(rel)})"
-    has_emo = name != "CommonVoice-SPS"
+    has_emo = name not in ("CommonVoice-SPS",)
     cells = [
         md(f"{badge}\n\n# {d['title']}: load, explore and probe\n\n{d['blurb']}\n\n"
            "This notebook works on this one dataset only. It builds a metadata table (path, emotion, speaker, gender, age), "
