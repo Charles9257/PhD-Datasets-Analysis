@@ -521,7 +521,8 @@ MODELS = {
 }
 if HAS_EMO:
     tr = work.split.isin(["train", "val"]).values; te = (work.split == "test").values
-    y = work.emotion.values
+    # integer labels: some sklearn versions (e.g. MLP with early stopping) fail on string labels
+    y = work.emotion.map({c: i for i, c in enumerate(EMO_CLASSES)}).astype(int).values
     res, best = [], None
     for fname, X in FEATS.items():
         for mname, mk in MODELS.items():
@@ -536,8 +537,9 @@ if HAS_EMO:
     r, p = best
     print(f"Best: {r['model']} on {r['features']}  UAR={r['UAR']:.3f}  macro-F1={r['macro_F1']:.3f}  "
           f"({'speaker-independent' if SPEAKER_INDEPENDENT else 'utterance-level'} test, chance UAR = {1/len(EMO_CLASSES):.3f})")
-    print(classification_report(y[te], p, zero_division=0))
-    cm = confusion_matrix(y[te], p, labels=EMO_CLASSES, normalize="true")
+    K = list(range(len(EMO_CLASSES)))
+    print(classification_report(y[te], p, labels=K, target_names=EMO_CLASSES, zero_division=0))
+    cm = np.nan_to_num(confusion_matrix(y[te], p, labels=K, normalize="true"))
     fig, ax = plt.subplots(figsize=(1.2 + .8 * len(EMO_CLASSES), 1 + .7 * len(EMO_CLASSES)))
     ax.imshow(cm, cmap="Blues", vmin=0, vmax=1)
     ax.set_xticks(range(len(EMO_CLASSES))); ax.set_xticklabels(EMO_CLASSES, rotation=45); ax.set_yticks(range(len(EMO_CLASSES))); ax.set_yticklabels(EMO_CLASSES)
